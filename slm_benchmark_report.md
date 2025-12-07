@@ -4,6 +4,12 @@
 **GPU:** NVIDIA B200
 **Benchmark:** End-to-end transformer inference (forward pass)
 
+
+## Helion Overview:
+
+[Helion AutoTuner](https://pytorch.org/wp-content/uploads/2025/10/1-5.png)
+[Helion Compiler](https://pytorch.org/wp-content/uploads/2025/10/5-2.png)
+
 ## Executive Summary
 
 This report compares the performance of **Helion attention kernels** against **PyTorch's scaled_dot_product_attention (SDPA)** across 10 state-of-the-art small language model architectures.
