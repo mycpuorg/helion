@@ -7,8 +7,8 @@
 
 ## Helion Overview:
 
-[Helion AutoTuner](https://pytorch.org/wp-content/uploads/2025/10/1-5.png)
-[Helion Compiler](https://pytorch.org/wp-content/uploads/2025/10/5-2.png)
+![Helion AutoTuner](https://pytorch.org/wp-content/uploads/2025/10/1-5.png)
+![Helion Compiler](https://pytorch.org/wp-content/uploads/2025/10/5-2.png)
 
 ## Executive Summary
 
