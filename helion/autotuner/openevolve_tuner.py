@@ -62,6 +62,8 @@ class OpenEvolveTuner:
         model: str = "gpt-5.1",
         api_base: str = "https://api.openai.com/v1",
         verbose: bool = True,
+        checkpoint_interval: int = 10,
+        checkpoint_path: str | None = None,
     ) -> None:
         """
         Initialize the OpenEvolveTuner.
@@ -81,6 +83,8 @@ class OpenEvolveTuner:
             model: Model to use (e.g., 'gpt-5.1', 'anthropic/claude-opus-4-5-20251101').
             api_base: API base URL (e.g., 'https://api.openai.com/v1' or 'https://openrouter.ai/api/v1').
             verbose: Whether to print progress information.
+            checkpoint_interval: How often to save checkpoints (every N iterations).
+            checkpoint_path: Directory to save checkpoints. If None, uses a temp directory.
         """
         self._validate_config_space(config_space)
 
@@ -92,6 +96,8 @@ class OpenEvolveTuner:
         self.model = model
         self.api_base = api_base
         self.verbose = verbose
+        self.checkpoint_interval = checkpoint_interval
+        self.checkpoint_path = checkpoint_path
 
         self.best_config: Dict[str, Any] | None = None
         self.best_score: float | None = None
@@ -303,6 +309,7 @@ FORBIDDEN (will cause errors):
         config_yaml = f"""# OpenEvolve configuration for Helion kernel tuning
 random_seed: 42
 max_iterations: {self.max_evaluations}
+checkpoint_interval: {self.checkpoint_interval}
 
 llm:
   models:
@@ -380,17 +387,28 @@ evaluator:
                 if self.verbose:
                     print("\nStarting OpenEvolve optimization...")
                     print(f"This will make ~{self.max_evaluations} API calls to OpenAI.")
-                    print(f"Estimated cost: $0.01-0.10 (depending on model and complexity)\n")
+                    print(f"Estimated cost: $0.01-0.10 (depending on model and complexity)")
+                    if self.checkpoint_path:
+                        print(f"Checkpoints will be saved to: {self.checkpoint_path}")
+                    print()
+
+                # Determine output_dir and cleanup based on checkpoint_path
+                output_dir = self.checkpoint_path
+                cleanup = self.checkpoint_path is None  # Only cleanup if no checkpoint_path specified
 
                 result = run_evolution(
                     initial_program=str(initial_program_path),
                     evaluator=str(evaluator_path),
                     config=str(config_path),
                     iterations=self.max_evaluations,
+                    output_dir=output_dir,
+                    cleanup=cleanup,
                 )
 
                 if self.verbose:
                     print("\nOpenEvolve optimization complete!")
+                    if result.output_dir:
+                        print(f"Checkpoints saved to: {result.output_dir}")
 
             except Exception as e:
                 raise RuntimeError(
