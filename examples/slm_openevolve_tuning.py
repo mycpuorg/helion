@@ -16,10 +16,15 @@ Requirements:
 from __future__ import annotations
 
 import math
+import multiprocessing
 import os
 import sys
 from dataclasses import dataclass
 from typing import Any
+
+# Fix CUDA multiprocessing issue - must be set before importing torch
+if __name__ == "__main__":
+    multiprocessing.set_start_method('spawn', force=True)
 
 import torch
 
@@ -223,11 +228,10 @@ def run_openevolve_tuning():
     # Create tuner
     tuner = OpenEvolveTuner(
         config_space=config_space,
+        temperature=0.2,
         objective=evaluate_fn,
-        max_evaluations=max_evals,
-        population_size=10,
-        temperature=0.3,
-        model="gpt-4o-mini",  # Use cheaper model for tuning
+        model="gpt-5.1",  # Use cheaper model for tuning
+        checkpoint_path="/mnt/helion-openevolve-checkpoints",
         verbose=True,
     )
 

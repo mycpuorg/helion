@@ -230,6 +230,44 @@ The helion attention kernel uses flash attention with online softmax. Different 
 | 96 | [1, 64, 64] | 4 | 2 |
 | 128 | [1, 64, 32] | 4 | 2 |
 
+### OpenEvolve Autotuner Integration
+
+The Helion framework includes an **OpenEvolve-based autotuner** (`helion.autotuner.openevolve_tuner.OpenEvolveTuner`) that uses evolutionary algorithms powered by LLMs to optimize kernel configurations.
+
+#### Tuning Results (head_dim=64, seq_len=1024)
+
+| Configuration | Block Sizes | Warps | Stages | TFLOPS | Speedup |
+|--------------|-------------|-------|--------|--------|---------|
+| **Tuned (Best)** | [1, 128, 64] | 4 | 3 | **94.43** | **1.20x** |
+| Baseline | [1, 64, 64] | 4 | 2 | 78.93 | 1.00x |
+| Conservative | [1, 128, 64] | 4 | 2 | 82.21 | 1.04x |
+| High Warps | [1, 64, 64] | 8 | 3 | 78.51 | 0.99x |
+
+The tuned configuration (`block_sizes=[1, 128, 64], num_warps=4, num_stages=3`) delivers **19.6% improvement** over the baseline, which is used throughout this benchmark.
+
+#### Using the OpenEvolve Tuner
+
+```python
+from helion.autotuner.openevolve_tuner import OpenEvolveTuner
+
+config_space = {
+    "block_b": [1, 2, 4],
+    "block_m": [32, 64, 128, 256],
+    "block_n": [32, 64, 128],
+    "num_warps": [2, 4, 8],
+    "num_stages": [2, 3, 4],
+}
+
+tuner = OpenEvolveTuner(
+    config_space=config_space,
+    objective=your_benchmark_function,  # Returns TFLOPS
+    max_evaluations=50,
+    model="gpt-4o-mini",
+)
+
+best_config = tuner.tune()
+```
+
 ---
 
 ## Model Sources
