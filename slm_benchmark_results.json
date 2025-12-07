@@ -1,0 +1,333 @@
+{
+  "timestamp": "2025-12-07 09:15:58",
+  "gpu": "NVIDIA B200",
+  "summary": {
+    "avg_speedup": 1.0555072956828258,
+    "max_speedup": 1.2749938910443328,
+    "min_speedup": 1.0005674287832438,
+    "num_models": 10,
+    "num_configs": 40
+  },
+  "results": [
+    {
+      "model": "Qwen2-0.5B",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 13.608479976654053,
+      "torch_ms": 14.331904411315918,
+      "speedup": 1.0531598265128017
+    },
+    {
+      "model": "Qwen2-0.5B",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 20.51640033721924,
+      "torch_ms": 22.334848403930664,
+      "speedup": 1.0886338751838713
+    },
+    {
+      "model": "Qwen2-0.5B",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 36.42075157165527,
+      "torch_ms": 43.63052749633789,
+      "speedup": 1.1979579117278205
+    },
+    {
+      "model": "Qwen2-0.5B",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 77.10315322875977,
+      "torch_ms": 98.30604934692383,
+      "speedup": 1.2749938910443328
+    },
+    {
+      "model": "Qwen3-0.6B",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 15.385103702545166,
+      "torch_ms": 15.49519968032837,
+      "speedup": 1.0071560114193439
+    },
+    {
+      "model": "Qwen3-0.6B",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 25.967007637023926,
+      "torch_ms": 27.577391624450684,
+      "speedup": 1.0620165407557651
+    },
+    {
+      "model": "Qwen3-0.6B",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 52.68680000305176,
+      "torch_ms": 59.5762882232666,
+      "speedup": 1.1307630795534325
+    },
+    {
+      "model": "Qwen3-0.6B",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 130.30712127685547,
+      "torch_ms": 147.4328842163086,
+      "speedup": 1.1314261474863456
+    },
+    {
+      "model": "Llama-3.2-1B",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 21.668800354003906,
+      "torch_ms": 22.288223266601562,
+      "speedup": 1.0285859347300323
+    },
+    {
+      "model": "Llama-3.2-1B",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 41.1417121887207,
+      "torch_ms": 43.63150405883789,
+      "speedup": 1.0605174587459143
+    },
+    {
+      "model": "Llama-3.2-1B",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 78.90227127075195,
+      "torch_ms": 86.12243270874023,
+      "speedup": 1.0915076501817345
+    },
+    {
+      "model": "Llama-3.2-1B",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 151.00816345214844,
+      "torch_ms": 179.54865264892578,
+      "speedup": 1.1889996444187023
+    },
+    {
+      "model": "Qwen2-1.5B",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 33.445024490356445,
+      "torch_ms": 33.524784088134766,
+      "speedup": 1.0023847971108921
+    },
+    {
+      "model": "Qwen2-1.5B",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 59.851280212402344,
+      "torch_ms": 61.60838317871094,
+      "speedup": 1.0293578175783864
+    },
+    {
+      "model": "Qwen2-1.5B",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 117.68414306640625,
+      "torch_ms": 119.58577346801758,
+      "speedup": 1.0161587649114145
+    },
+    {
+      "model": "Qwen2-1.5B",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 234.8513412475586,
+      "torch_ms": 256.4485168457031,
+      "speedup": 1.0919610485655211
+    },
+    {
+      "model": "SmolLM2-1.7B",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 34.05526351928711,
+      "torch_ms": 34.988975524902344,
+      "speedup": 1.027417553386026
+    },
+    {
+      "model": "SmolLM2-1.7B",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 66.03305435180664,
+      "torch_ms": 69.85776138305664,
+      "speedup": 1.0579210982862155
+    },
+    {
+      "model": "SmolLM2-1.7B",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 128.2477569580078,
+      "torch_ms": 139.07653045654297,
+      "speedup": 1.0844363578388418
+    },
+    {
+      "model": "SmolLM2-1.7B",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 247.45317840576172,
+      "torch_ms": 290.9818420410156,
+      "speedup": 1.1759066661244404
+    },
+    {
+      "model": "Phi-2 (2.7B)",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 84.81428909301758,
+      "torch_ms": 85.08760070800781,
+      "speedup": 1.003222471330161
+    },
+    {
+      "model": "Phi-2 (2.7B)",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 147.27879333496094,
+      "torch_ms": 148.80352020263672,
+      "speedup": 1.0103526572505794
+    },
+    {
+      "model": "Phi-2 (2.7B)",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 292.5005340576172,
+      "torch_ms": 298.43605041503906,
+      "speedup": 1.0202923265646164
+    },
+    {
+      "model": "Phi-2 (2.7B)",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 600.3102722167969,
+      "torch_ms": 615.1669921875,
+      "speedup": 1.0247484020485622
+    },
+    {
+      "model": "Qwen2.5-3B",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 61.160465240478516,
+      "torch_ms": 61.19516944885254,
+      "speedup": 1.0005674287832438
+    },
+    {
+      "model": "Qwen2.5-3B",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 120.61588668823242,
+      "torch_ms": 122.68441772460938,
+      "speedup": 1.0171497395009306
+    },
+    {
+      "model": "Qwen2.5-3B",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 219.7017593383789,
+      "torch_ms": 228.5731201171875,
+      "speedup": 1.0403791066831884
+    },
+    {
+      "model": "Qwen2.5-3B",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 465.0102844238281,
+      "torch_ms": 487.08599853515625,
+      "speedup": 1.0474736040272337
+    },
+    {
+      "model": "Llama-3.2-3B",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 62.97800064086914,
+      "torch_ms": 63.8059024810791,
+      "speedup": 1.01314588954532
+    },
+    {
+      "model": "Llama-3.2-3B",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 126.1266098022461,
+      "torch_ms": 126.94379043579102,
+      "speedup": 1.0064790501768515
+    },
+    {
+      "model": "Llama-3.2-3B",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 237.33158111572266,
+      "torch_ms": 247.57351684570312,
+      "speedup": 1.043154542188747
+    },
+    {
+      "model": "Llama-3.2-3B",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 472.45916748046875,
+      "torch_ms": 502.22035217285156,
+      "speedup": 1.0629920779209203
+    },
+    {
+      "model": "Phi-3-mini (3.8B)",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 79.64329528808594,
+      "torch_ms": 79.97747039794922,
+      "speedup": 1.0041958975787542
+    },
+    {
+      "model": "Phi-3-mini (3.8B)",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 163.04649353027344,
+      "torch_ms": 164.67137908935547,
+      "speedup": 1.0099657804586906
+    },
+    {
+      "model": "Phi-3-mini (3.8B)",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 311.1793975830078,
+      "torch_ms": 316.81121826171875,
+      "speedup": 1.0180983083149284
+    },
+    {
+      "model": "Phi-3-mini (3.8B)",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 636.0383911132812,
+      "torch_ms": 650.3132629394531,
+      "speedup": 1.0224434122619328
+    },
+    {
+      "model": "rnj-1 (8B)",
+      "seq_len": 512,
+      "batch_size": 1,
+      "helion_ms": 145.60610961914062,
+      "torch_ms": 146.4934539794922,
+      "speedup": 1.0060941423589476
+    },
+    {
+      "model": "rnj-1 (8B)",
+      "seq_len": 1024,
+      "batch_size": 1,
+      "helion_ms": 295.724609375,
+      "torch_ms": 299.5587463378906,
+      "speedup": 1.012965227922674
+    },
+    {
+      "model": "rnj-1 (8B)",
+      "seq_len": 2048,
+      "batch_size": 1,
+      "helion_ms": 553.2712097167969,
+      "torch_ms": 559.1179504394531,
+      "speedup": 1.0105675853360399
+    },
+    {
+      "model": "rnj-1 (8B)",
+      "seq_len": 4096,
+      "batch_size": 1,
+      "helion_ms": 1170.3316650390625,
+      "torch_ms": 1222.6947631835938,
+      "speedup": 1.0447421014988802
+    }
+  ]
+}
