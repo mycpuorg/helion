@@ -313,7 +313,8 @@ def run_b200_tuning():
         objective=evaluate_fn,
         max_evaluations=max_evals,
         population_size=15,
-        temperature=0.2,  # Low temperature for more deterministic config generation
+        temperature=0.2,  # Low temperature for more determi,nistic config generation ,
+        checkpoint_path="/mnt/helion-openevolve-checkpoints",
         model="gpt-5.1",  # Use gpt-5.1 for chat-based code generation
         verbose=True,
     )
