@@ -1063,7 +1063,6 @@ class TestExamples(RefEagerTestBase, TestCase):
             )
         )
 
-    @skipIfRefEager("ref eager mode hits CUDA indexing error with hl.store")
     def test_jagged_softmax(self):
         num_rows, max_cols = 128, 64
         M = 8  # number of features
@@ -1418,7 +1417,7 @@ class TestExamples(RefEagerTestBase, TestCase):
 
     def test_fused_linear_jsd(self):
         beta = 0.5
-        ignore_index = 1
+        ignore_index = -100
         temperature = 1.0
         m, n, k = 64, 128, 256
 
@@ -1439,8 +1438,16 @@ class TestExamples(RefEagerTestBase, TestCase):
 
         # Import and use the reference implementation
         mod = import_path(EXAMPLES_DIR / "fused_linear_jsd.py")
+        # fused_linear_jsd_pytorch signature:
+        # (beta, ignore_index, temperature, student_weight, teacher_weight, student_input, teacher_input)
         expected = mod.fused_linear_jsd_pytorch(
-            *args[:-2], student_input, teacher_input, student_weight, teacher_weight
+            beta,
+            ignore_index,
+            temperature,
+            student_weight,
+            teacher_weight,
+            student_input,
+            teacher_input,
         )
 
         self.assertExpectedJournal(
@@ -1833,6 +1840,63 @@ class TestExamples(RefEagerTestBase, TestCase):
                 rtol=1e-2,
                 atol=1e-1,
                 block_sizes=[4, 16, 16],
+            )
+        )
+
+    def test_gdn_fwd_h(self):
+        """Test gated delta net forward h kernel."""
+        import math
+
+        batch = 2
+        nheads = 4
+        seqlen = 512
+        chunk_size = 64
+        dhead = 16
+        dstate = 32
+
+        k = torch.randn(
+            batch, seqlen, nheads, dhead, dtype=torch.bfloat16, device=DEVICE
+        )
+        k = torch.nn.functional.rms_norm(k, (dhead,))
+        w = torch.randn(
+            batch,
+            seqlen // chunk_size,
+            chunk_size,
+            nheads,
+            dhead,
+            dtype=torch.float32,
+            device=DEVICE,
+        )
+        wu, ws, wv = torch.linalg.svd(w.permute(0, 1, 3, 2, 4), full_matrices=False)
+        w = torch.einsum("bnhik,bnhkj->bnhij", wu, wv)
+        w = (
+            w.permute(0, 1, 3, 2, 4)
+            .reshape(batch, seqlen, nheads, dhead)
+            .to(torch.bfloat16)
+        )
+        u = torch.randn(
+            batch, seqlen, nheads, dstate, dtype=torch.bfloat16, device=DEVICE
+        )
+        u = torch.nn.functional.rms_norm(u, (dstate,))
+        g = torch.cumsum(
+            0.5
+            * math.log(1 / dhead)
+            * torch.rand(batch, seqlen, nheads, dtype=torch.float32, device=DEVICE),
+            dim=1,
+        )
+
+        args = (k, w, u, g, chunk_size)
+
+        # Import and use the reference implementation
+        mod = import_path(EXAMPLES_DIR / "gdn_fwd_h.py")
+        expected = mod.ref_gdn_fwd_h(*args)
+
+        self.assertExpectedJournal(
+            check_example(
+                "gdn_fwd_h",
+                args,
+                expected,
+                fn_name="helion_gdn_fwd_h",
             )
         )
 

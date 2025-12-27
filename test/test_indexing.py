@@ -929,6 +929,76 @@ class TestIndexing(RefEagerTestBase, TestCase):
         torch.testing.assert_close(result, expected)
         self.assertExpectedJournal(code)
 
+    def test_size1_dimension_tile_reshape(self):
+        """Test that tile indexing on size-1 dimensions works with reshape.
+
+        This tests a fix where loading from a tensor with a size-1 dimension
+        and then reshaping to tile sizes would fail because shape inference
+        returned [1, block_size] instead of [block_size_0, block_size_1].
+        """
+
+        @helion.kernel(autotune_effort="none")
+        def size1_reshape_kernel(
+            x: torch.Tensor,
+            out: torch.Tensor,
+        ):
+            for tile_1, tile_2 in hl.tile([x.size(0), x.size(1)]):
+                block = x[tile_1, tile_2]
+                # This reshape would fail before the fix when x.size(0) == 1
+                block_reshape = block.reshape([tile_1, tile_2])
+                out[tile_1, tile_2] = block_reshape
+
+        # Test with size-1 first dimension (this was the failing case)
+        x = torch.randn(1, 16, dtype=torch.bfloat16, device=DEVICE)
+        out = torch.empty_like(x)
+        code, _ = code_and_output(size1_reshape_kernel, (x, out))
+        torch.testing.assert_close(out, x)
+
+        # Test with non-size-1 first dimension (should also work)
+        x2 = torch.randn(4, 16, dtype=torch.bfloat16, device=DEVICE)
+        out2 = torch.empty_like(x2)
+        size1_reshape_kernel(x2, out2)
+        torch.testing.assert_close(out2, x2)
+
+        self.assertExpectedJournal(code)
+
+    def test_size1_dimension_variable_tile_range(self):
+        """Test tile indexing on size-1 dimensions with variable tile ranges.
+
+        This tests the case where a tile loop uses runtime-determined start/end
+        values (from tensor lookups) and indexes into a size-1 dimension.
+        """
+
+        @helion.kernel(autotune_effort="none", static_shapes=False)
+        def variable_tile_range_kernel(
+            query: torch.Tensor,
+            query_start_lens: torch.Tensor,
+            num_seqs: int,
+            output: torch.Tensor,
+        ) -> None:
+            q_size_1 = hl.specialize(query.size(1))
+
+            for seq_tile in hl.tile(num_seqs, block_size=1):
+                seq_idx = seq_tile.begin
+                query_start = query_start_lens[seq_idx]
+                query_end = query_start_lens[seq_idx + 1]
+
+                for tile_q in hl.tile(query_start, query_end):
+                    q = query[tile_q, :]
+                    q = q.reshape([tile_q.block_size, q_size_1])
+                    output[tile_q, :] = q
+
+        query = torch.randn(1, 16, dtype=torch.bfloat16, device=DEVICE)
+        query_start_lens = torch.tensor([0, 1], dtype=torch.int32, device=DEVICE)
+        num_seqs = 1
+        out = torch.empty_like(query)
+
+        code, _ = code_and_output(
+            variable_tile_range_kernel, (query, query_start_lens, num_seqs, out)
+        )
+        torch.testing.assert_close(out, query)
+        self.assertExpectedJournal(code)
+
     @unittest.skipIf(not supports_tensor_descriptor(), "TensorDescriptor not supported")
     @unittest.skipIf(
         get_tensor_descriptor_fn_name() != "tl._experimental_make_tensor_descriptor",
@@ -972,6 +1042,7 @@ class TestIndexing(RefEagerTestBase, TestCase):
         torch.testing.assert_close(result, expected)
         self.assertExpectedJournal(code)
 
+    @skipIfCpu("")
     def test_2d_slice_index(self):
         """Test both setter from scalar and getter for [:,i]"""
 
@@ -2045,6 +2116,234 @@ class TestIndexing(RefEagerTestBase, TestCase):
         expected = x_data * expanded_scale
 
         torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
+
+    @skipIfRefEager("Test requires dynamic shapes masking")
+    def test_indexed_store_mask_propagation(self):
+        """Test that indexed stores with broadcast tensor subscripts propagate masks correctly.
+
+        This tests the fix for a bug where stores like:
+            dx[tile_m.index[:, None], indices[tile_m, :]] = dy[tile_m, :]
+        would have None as the mask instead of propagating the tile's mask.
+
+        The issue was that when block_id is 0, the condition
+        `(bid := env.get_block_id(...))` would evaluate to False because
+        0 is falsy in Python. The fix is to check `is not None` explicitly.
+        """
+
+        @helion.kernel(static_shapes=False)
+        def scatter_kernel(
+            dy: torch.Tensor,
+            indices: torch.Tensor,
+            input_shape: list[int],
+            k: int,
+        ) -> torch.Tensor:
+            dx = dy.new_zeros(*input_shape)
+            k = hl.specialize(k)
+            dx = dx.reshape(-1, dx.shape[-1])
+            dy = dy.reshape(-1, k)
+            indices = indices.reshape(-1, k)
+            for tile_m in hl.tile(dy.shape[0]):
+                # This pattern uses tile_m.index[:, None] as a 2D tensor subscript
+                # which should propagate the tile's mask to the store
+                dx[tile_m.index[:, None], indices[tile_m, :]] = dy[tile_m, :]
+            return dx.view(input_shape)
+
+        # Test with unique indices to avoid race conditions
+        dy = torch.randn(5, 8, device=DEVICE)
+        idx = torch.arange(8, device=DEVICE).unsqueeze(0).expand(5, 8).contiguous()
+
+        code, result = code_and_output(
+            scatter_kernel,
+            (dy, idx, (5, 20), 8),
+            block_size=[2],
+        )
+
+        # Verify the mask is present in the store (not None)
+        self.assertIn("tl.store", code)
+        # The mask should be something like mask_0[:, None], not None
+        self.assertNotIn(
+            "tl.store(dx + (load_1 * dx_stride_0 + load_2 * dx_stride_1), load, None)",
+            code,
+        )
+
+        # Compute expected result
+        expected = torch.zeros(5, 20, device=DEVICE)
+        for i in range(5):
+            for j in range(8):
+                expected[i, idx[i, j]] = dy[i, j]
+
+        torch.testing.assert_close(result, expected)
+        self.assertExpectedJournal(code)
+
+    def test_non_consecutive_tensor_indexers_no_broadcast(self):
+        """Test that non-consecutive tensor indexers don't get incorrectly broadcast.
+
+        The issue was that when tensor indexers are not consecutive (separated by
+        other index types like tile.index or SymInt), they were still being
+        broadcast together, causing incorrect dimension ordering.
+        """
+
+        @helion.kernel(static_shapes=True, autotune_effort="none")
+        def store_with_mixed_indices(
+            tensor_idx: torch.Tensor,
+            data: torch.Tensor,
+            k: int,
+        ) -> torch.Tensor:
+            m, n = data.size()
+            k = hl.specialize(k)
+            out = torch.zeros([m, m, k], device=data.device, dtype=data.dtype)
+
+            # Use explicit block_size to ensure consistent behavior in both modes
+            for tile_m in hl.tile(m, block_size=4):
+                # Store 3D data into out[tensor_idx[tile_m], tile_m.index, :]
+                val = hl.load(data, [tile_m, hl.arange(k, dtype=torch.int32)])
+                val_3d = val[:, None, :].expand(val.size(0), val.size(0), k)
+                hl.store(
+                    out,
+                    [tensor_idx[tile_m], tile_m.index, hl.arange(k, dtype=torch.int32)],
+                    val_3d,
+                )
+
+            return out
+
+        M = 8
+        K = 16
+        block_size = 4
+        tensor_idx = torch.arange(M, device=DEVICE, dtype=torch.int32)
+        data = torch.randn(M, K, device=DEVICE)
+
+        code, result = code_and_output(
+            store_with_mixed_indices,
+            (tensor_idx, data, K),
+        )
+
+        # Verify the result is correct
+        # The kernel stores at out[tensor_idx[tile_m], tile_m.index, :] = val_3d
+        # With explicit block_size=4, tile_m iterates in chunks: [0:4], [4:8]
+        # tile_m.index returns global indices, so stores happen in diagonal blocks
+        expected = torch.zeros([M, M, K], device=DEVICE)
+        for tile_start in range(0, M, block_size):
+            tile_end = tile_start + block_size
+            expected[tile_start:tile_end, tile_start:tile_end, :] = (
+                data[tile_start:tile_end, :]
+                .unsqueeze(1)
+                .expand(block_size, block_size, K)
+            )
+        torch.testing.assert_close(result, expected)
+        self.assertExpectedJournal(code)
+
+    @skipIfCpu("")
+    def test_mixed_scalar_block_store_size1_dim(self):
+        """Test store with mixed scalar/block indexing when block dimension has size 1.
+
+        This tests a bug fix where storing a block value with:
+        - One index being a tile/block (e.g., m_tile) over a size-1 dimension
+        - Another index being a scalar (e.g., computed from tile.begin)
+        would generate invalid Triton code because the pointer became scalar
+        but the value was still a block.
+        """
+
+        @helion.kernel(autotune_effort="none")
+        def kernel_with_mixed_store(
+            x_data: torch.Tensor, BLOCK_SIZE: hl.constexpr
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            m, n = x_data.shape
+            n = hl.specialize(n)
+            n_scale_cols = (n + BLOCK_SIZE - 1) // BLOCK_SIZE
+            scales = x_data.new_empty((m, n_scale_cols), dtype=torch.uint8)
+            out = x_data.new_empty(x_data.shape, dtype=torch.float32)
+
+            n_block = hl.register_block_size(BLOCK_SIZE, n)
+
+            for m_tile, n_tile in hl.tile([m, n], block_size=[None, n_block]):
+                for n_tile_local in hl.tile(
+                    n_tile.begin, n_tile.end, block_size=BLOCK_SIZE
+                ):
+                    x_block = x_data[m_tile, n_tile_local]
+
+                    # Compute one value per row in m_tile
+                    row_max = x_block.abs().amax(dim=1)
+                    row_value = row_max.to(torch.uint8)
+
+                    out[m_tile, n_tile_local] = x_block * 2.0
+
+                    # Mixed indexing: block row index + scalar column index
+                    scale_col_idx = n_tile_local.begin // BLOCK_SIZE  # scalar
+                    scales[m_tile, scale_col_idx] = row_value  # row_value is block
+
+            return out, scales
+
+        # Test with m=1 (single row - this was the failing case before the fix)
+        # The fix ensures tl.reshape is applied to squeeze the value to scalar
+        # when the pointer is scalar due to size-1 dimensions being dropped.
+        x1 = torch.randn(1, 64, device=DEVICE, dtype=torch.float32)
+        code, (out1, scales1) = code_and_output(kernel_with_mixed_store, (x1, 32))
+        expected_out1 = x1 * 2.0
+        torch.testing.assert_close(out1, expected_out1)
+        self.assertEqual(scales1.shape, (1, 2))
+        self.assertExpectedJournal(code)
+
+    @skipIfCpu("fails on Triton CPU backend")
+    def test_gather_2d_dim1(self):
+        @helion.kernel()
+        def test_gather(
+            input_tensor: torch.Tensor,  # [N, M]
+            index_tensor: torch.Tensor,  # [N, K]
+        ) -> torch.Tensor:  # [N, K]
+            N = input_tensor.size(0)
+            K = index_tensor.size(1)
+            out = torch.empty(
+                [N, K], dtype=input_tensor.dtype, device=input_tensor.device
+            )
+            for tile_n, tile_k in hl.tile([N, K]):
+                # Input sliced on non-gather dim to match index's first dim
+                out[tile_n, tile_k] = torch.gather(
+                    input_tensor[tile_n, :], 1, index_tensor[tile_n, tile_k]
+                )
+            return out
+
+        N, M, K = 16, 32, 8
+        input_tensor = torch.randn(N, M, device=DEVICE, dtype=torch.float32)
+        index_tensor = torch.randint(0, M, (N, K), device=DEVICE, dtype=torch.int64)
+
+        code, result = code_and_output(
+            test_gather, (input_tensor, index_tensor), block_size=[4, 4]
+        )
+        expected = torch.gather(input_tensor, 1, index_tensor)
+
+        torch.testing.assert_close(result, expected)
+        self.assertExpectedJournal(code)
+
+    @skipIfCpu("fails on Triton CPU backend")
+    def test_gather_2d_dim0(self):
+        @helion.kernel()
+        def test_gather(
+            input_tensor: torch.Tensor,  # [N, M]
+            index_tensor: torch.Tensor,  # [K, M]
+        ) -> torch.Tensor:  # [K, M]
+            K = index_tensor.size(0)
+            M = input_tensor.size(1)
+            out = torch.empty(
+                [K, M], dtype=input_tensor.dtype, device=input_tensor.device
+            )
+            for tile_k, tile_m in hl.tile([K, M]):
+                # Input sliced on non-gather dim to match index's second dim
+                out[tile_k, tile_m] = torch.gather(
+                    input_tensor[:, tile_m], 0, index_tensor[tile_k, tile_m]
+                )
+            return out
+
+        N, M, K = 16, 32, 8
+        input_tensor = torch.randn(N, M, device=DEVICE, dtype=torch.float32)
+        index_tensor = torch.randint(0, N, (K, M), device=DEVICE, dtype=torch.int64)
+
+        code, result = code_and_output(
+            test_gather, (input_tensor, index_tensor), block_size=[4, 8]
+        )
+        expected = torch.gather(input_tensor, 0, index_tensor)
+
+        torch.testing.assert_close(result, expected)
+        self.assertExpectedJournal(code)
 
 
 if __name__ == "__main__":

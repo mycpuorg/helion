@@ -42,10 +42,18 @@ jobs:
       - name: Install lint dependencies
         run: |
           source .venv/bin/activate
-          uv pip install pyrefly
-          uv pip install .'[dev,surrogate]'
+          uv pip install pyrefly==0.46.0
+          uv pip install .'[dev]'
 
       - name: Run pre-commit
         run: |
           source .venv/bin/activate
+          set +e
           pre-commit run --all-files
+          STATUS=$?
+          set -e
+          if [ $STATUS -ne 0 ]; then
+            echo "❌ pre-commit changed files:"
+            git --no-pager diff
+            exit $STATUS
+          fi

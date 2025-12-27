@@ -98,7 +98,7 @@ jobs:
 
       - name: Cache dependencies
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/uv
@@ -156,7 +156,7 @@ jobs:
         run: |
           source .venv/bin/activate
           uv pip install setuptools ninja
-          SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0" uv pip install -e .'[dev,surrogate]'
+          SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0" uv pip install -e .'[dev]'
           python -c "import helion; print(helion.__name__)"
 
       - name: Run Tests
@@ -219,7 +219,7 @@ jobs:
 
       - name: Cache dependencies
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/uv
@@ -230,7 +230,7 @@ jobs:
         run: |
           source .venv/bin/activate
           # Install jupyter for executing notebooks
-          uv pip install jupyter nbconvert pytest numpy
+          uv pip install jupyter nbconvert pytest numpy "nbclient<0.10"
 
       - name: Run Notebook Tests
         run: |
