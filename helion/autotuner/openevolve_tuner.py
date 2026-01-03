@@ -64,6 +64,7 @@ class OpenEvolveTuner:
         verbose: bool = True,
         checkpoint_interval: int = 10,
         checkpoint_path: str | None = None,
+        artifact_dir: str | None = "openevolve_artifacts",
     ) -> None:
         """
         Initialize the OpenEvolveTuner.
@@ -85,6 +86,8 @@ class OpenEvolveTuner:
             verbose: Whether to print progress information.
             checkpoint_interval: How often to save checkpoints (every N iterations).
             checkpoint_path: Directory to save checkpoints. If None, uses a temp directory.
+            artifact_dir: Directory to save per-evaluation artifacts (programs, configs,
+                and metrics). Defaults to "openevolve_artifacts" in the CWD.
         """
         self._validate_config_space(config_space)
 
@@ -98,6 +101,7 @@ class OpenEvolveTuner:
         self.verbose = verbose
         self.checkpoint_interval = checkpoint_interval
         self.checkpoint_path = checkpoint_path
+        self.artifact_dir = artifact_dir
 
         self.best_config: Dict[str, Any] | None = None
         self.best_score: float | None = None
@@ -150,7 +154,7 @@ class OpenEvolveTuner:
 
         return "\n".join(lines)
 
-    def _create_evaluator_function(self, evaluator_path: str) -> None:
+    def _create_evaluator_function(self, evaluator_path: str, artifact_dir: str) -> None:
         """
         Create the evaluator function that OpenEvolve will use.
 
@@ -169,10 +173,13 @@ class OpenEvolveTuner:
 import sys
 import importlib.util
 import traceback
+import time
 from pathlib import Path
 
 # Config space for validation
 CONFIG_SPACE = {repr(self.config_space)}
+ARTIFACT_DIR = Path({repr(artifact_dir)})
+COUNTER_PATH = Path("{evaluator_path}.counter")
 
 def validate_config(config):
     \"\"\"Check if config contains valid values from config_space.\"\"\"
@@ -211,6 +218,15 @@ def evaluate(program_path):
         dict with 'score' key (higher is better)
     \"\"\"
     evaluation_count = {self.evaluation_count}
+    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        counter = int(COUNTER_PATH.read_text())
+    except Exception:
+        counter = 0
+    COUNTER_PATH.write_text(str(counter + 1))
+    eval_id = f"{{counter:05d}}"
+    start_time = time.time()
 
     try:
         # Load the evolved program
@@ -220,6 +236,14 @@ def evaluate(program_path):
         if not hasattr(program_module, 'get_kernel_config'):
             if {self.verbose}:
                 print(f"Evaluation {{evaluation_count}}: No get_kernel_config function found", file=sys.stderr)
+            _write_artifact(
+                eval_id,
+                program_path,
+                None,
+                0.0,
+                time.time() - start_time,
+                "missing get_kernel_config",
+            )
             return {{"score": 0.0}}
 
         config = program_module.get_kernel_config()
@@ -229,6 +253,14 @@ def evaluate(program_path):
         if not is_valid:
             if {self.verbose}:
                 print(f"Evaluation {{evaluation_count}}: Invalid config: {{error_msg}}", file=sys.stderr)
+            _write_artifact(
+                eval_id,
+                program_path,
+                config,
+                0.0,
+                time.time() - start_time,
+                error_msg,
+            )
             return {{"score": 0.0}}
 
         # Call the objective function (imported from the saved module)
@@ -248,13 +280,54 @@ def evaluate(program_path):
             import json
             f.write(json.dumps({{'config': config, 'score': float(score)}}) + '\\n')
 
+        _write_artifact(
+            eval_id,
+            program_path,
+            config,
+            float(score),
+            time.time() - start_time,
+            None,
+        )
+
         return {{"score": float(score)}}
 
     except Exception as e:
         if {self.verbose}:
             print(f"Evaluation {{evaluation_count}}: Error: {{e}}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
+        _write_artifact(
+            eval_id,
+            program_path,
+            None,
+            0.0,
+            time.time() - start_time,
+            str(e),
+        )
         return {{"score": 0.0}}
+
+def _read_program_text(path):
+    try:
+        return Path(path).read_text()
+    except Exception:
+        return None
+
+def _write_artifact(eval_id, program_path, config, score, duration_s, error):
+    program_text = _read_program_text(program_path)
+    artifact = {{
+        "eval_id": eval_id,
+        "program_path": str(program_path),
+        "program_text": program_text,
+        "config": config,
+        "score": float(score),
+        "duration_s": float(duration_s),
+        "error": error,
+        "reasoning": None,
+    }}
+    (ARTIFACT_DIR / f"eval_{{eval_id}}.json").write_text(
+        __import__("json").dumps(artifact, indent=2)
+    )
+    if program_text is not None:
+        (ARTIFACT_DIR / f"eval_{{eval_id}}.py").write_text(program_text)
 """
 
         # Write evaluator
@@ -354,6 +427,15 @@ evaluator:
             print(f"Starting OpenEvolve-based tuning with max_evaluations={self.max_evaluations}")
             print(f"Config space: {self.config_space}")
 
+        # Resolve artifact directory
+        if self.artifact_dir is not None:
+            artifact_dir = Path(self.artifact_dir)
+            if not artifact_dir.is_absolute():
+                artifact_dir = Path.cwd() / artifact_dir
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            artifact_dir = None
+
         # Create temporary directory for OpenEvolve files
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
@@ -367,7 +449,10 @@ evaluator:
             initial_program = self._generate_initial_program()
             initial_program_path.write_text(initial_program)
 
-            self._create_evaluator_function(str(evaluator_path))
+            evaluator_artifact_dir = (
+                str(artifact_dir) if artifact_dir is not None else str(tmpdir_path)
+            )
+            self._create_evaluator_function(str(evaluator_path), evaluator_artifact_dir)
             self._create_config_yaml(str(config_path))
 
             if self.verbose:
@@ -390,11 +475,13 @@ evaluator:
                     print(f"Estimated cost: $0.01-0.10 (depending on model and complexity)")
                     if self.checkpoint_path:
                         print(f"Checkpoints will be saved to: {self.checkpoint_path}")
+                    if artifact_dir is not None:
+                        print(f"Artifacts will be saved to: {artifact_dir}")
                     print()
 
                 # Determine output_dir and cleanup based on checkpoint_path
-                output_dir = self.checkpoint_path
-                cleanup = self.checkpoint_path is None  # Only cleanup if no checkpoint_path specified
+                output_dir = self.checkpoint_path or (str(artifact_dir) if artifact_dir else None)
+                cleanup = output_dir is None
 
                 result = run_evolution(
                     initial_program=str(initial_program_path),
@@ -488,5 +575,32 @@ evaluator:
             print(f"Best score: {self.best_score:.4f}")
             print(f"Total evaluations: {self.evaluation_count}")
             print(f"{'='*60}\n")
+
+        if artifact_dir is not None:
+            summary_path = artifact_dir / "tuning_summary.json"
+            best_so_far = None
+            history_with_improvement = []
+            for config, score in self.history:
+                if best_so_far is None or score > best_so_far:
+                    improvement = None if best_so_far is None else float(score - best_so_far)
+                    best_so_far = score
+                else:
+                    improvement = float(score - best_so_far)
+                history_with_improvement.append(
+                    {
+                        "config": config,
+                        "score": float(score),
+                        "best_so_far": float(best_so_far),
+                        "improvement_vs_best": improvement,
+                    }
+                )
+
+            summary = {
+                "best_config": self.best_config,
+                "best_score": self.best_score,
+                "evaluation_count": self.evaluation_count,
+                "history": history_with_improvement,
+            }
+            summary_path.write_text(json.dumps(summary, indent=2))
 
         return self.best_config
