@@ -65,6 +65,8 @@ class OpenEvolveTuner:
         checkpoint_interval: int = 10,
         checkpoint_path: str | None = None,
         artifact_dir: str | None = "openevolve_artifacts",
+        initial_config: Dict[str, Any] | None = None,
+        llm_models: List[Dict[str, Any]] | None = None,
     ) -> None:
         """
         Initialize the OpenEvolveTuner.
@@ -88,6 +90,9 @@ class OpenEvolveTuner:
             checkpoint_path: Directory to save checkpoints. If None, uses a temp directory.
             artifact_dir: Directory to save per-evaluation artifacts (programs, configs,
                 and metrics). Defaults to "openevolve_artifacts" in the CWD.
+            initial_config: Optional starting configuration for the initial program.
+            llm_models: Optional list of LLM model configs for an ensemble. Each entry
+                may include name, weight, api_base, api_key, and temperature.
         """
         self._validate_config_space(config_space)
 
@@ -102,6 +107,8 @@ class OpenEvolveTuner:
         self.checkpoint_interval = checkpoint_interval
         self.checkpoint_path = checkpoint_path
         self.artifact_dir = artifact_dir
+        self.initial_config = initial_config
+        self.llm_models = llm_models
 
         self.best_config: Dict[str, Any] | None = None
         self.best_score: float | None = None
@@ -128,10 +135,17 @@ class OpenEvolveTuner:
         This creates a Python function that returns a kernel configuration.
         OpenEvolve will mutate the values in this function to try different configs.
         """
-        # Pick initial values (first value from each list)
-        initial_values = {
-            param: values[0] for param, values in self.config_space.items()
-        }
+        # Pick initial values (prefer provided initial_config)
+        initial_values = {}
+        for param, values in self.config_space.items():
+            if self.initial_config is not None and param in self.initial_config:
+                candidate = self.initial_config[param]
+                if candidate in values:
+                    initial_values[param] = candidate
+                else:
+                    initial_values[param] = values[0]
+            else:
+                initial_values[param] = values[0]
 
         # Generate Python code
         lines = [
@@ -379,6 +393,34 @@ FORBIDDEN (will cause errors):
 - if/else statements
 """
 
+        if self.llm_models:
+            models_yaml = "\n".join(
+                [
+                    "    - "
+                    + "\n      ".join(
+                        [
+                            f'name: "{model_cfg["name"]}"',
+                            f'weight: {model_cfg.get("weight", 1.0)}',
+                            f'api_base: "{model_cfg.get("api_base", self.api_base)}"',
+                            *(
+                                [f'api_key: "{model_cfg["api_key"]}"']
+                                if "api_key" in model_cfg
+                                else []
+                            ),
+                            *(
+                                [f'temperature: {model_cfg["temperature"]}']
+                                if "temperature" in model_cfg
+                                else []
+                            ),
+                        ]
+                    )
+                    for model_cfg in self.llm_models
+                ]
+            )
+        else:
+            models_yaml = f"""    - name: "{self.model}"
+      weight: 1.0"""
+
         config_yaml = f"""# OpenEvolve configuration for Helion kernel tuning
 random_seed: 42
 max_iterations: {self.max_evaluations}
@@ -386,8 +428,7 @@ checkpoint_interval: {self.checkpoint_interval}
 
 llm:
   models:
-    - name: "{self.model}"
-      weight: 1.0
+{models_yaml}
   api_base: "{self.api_base}"
   temperature: {self.temperature}
   system_message: |
@@ -471,7 +512,7 @@ evaluator:
                 # Run OpenEvolve
                 if self.verbose:
                     print("\nStarting OpenEvolve optimization...")
-                    print(f"This will make ~{self.max_evaluations} API calls to OpenAI.")
+                    print(f"This will make ~{self.max_evaluations} LLM API calls.")
                     print(f"Estimated cost: $0.01-0.10 (depending on model and complexity)")
                     if self.checkpoint_path:
                         print(f"Checkpoints will be saved to: {self.checkpoint_path}")
