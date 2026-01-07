@@ -20,6 +20,7 @@ from .effort_profile import RandomSearchConfig as RandomSearchConfig
 from .external import UserConfigSpec as UserConfigSpec
 from .external import autotune as autotune
 from .finite_search import FiniteSearch as FiniteSearch
+from .llm_search import LLMSearch as LLMSearch
 from .local_cache import LocalAutotuneCache as LocalAutotuneCache
 from .local_cache import StrictLocalAutotuneCache as StrictLocalAutotuneCache
 from .pattern_search import InitialPopulationStrategy as InitialPopulationStrategy
@@ -35,6 +36,7 @@ search_algorithms: dict[str, type[BaseSearch]] = {
     "DESurrogateHybrid": DESurrogateHybrid,
     "LFBOPatternSearch": LFBOPatternSearch,
     "LFBOTreeSearch": LFBOTreeSearch,
+    "LLMSearch": LLMSearch,
     "DifferentialEvolutionSearch": DifferentialEvolutionSearch,
     "FiniteSearch": FiniteSearch,
     "PatternSearch": PatternSearch,
