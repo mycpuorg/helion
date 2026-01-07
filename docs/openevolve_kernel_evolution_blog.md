@@ -114,6 +114,17 @@ Many candidates will not beat the best‑so‑far. That is expected and shows up
 
 If you want a greedier search, reduce islands, reduce population size, and lower temperature.
 
+## Seeding from a strong baseline
+
+OpenEvolve now seeds from the Helion baseline config by default. This matters.
+Starting from a proven config shortens the path to good results and reduces wasted
+evaluations on bad regions. It is simple and it pays for itself when each eval is
+real GPU time.
+
+In practice, this turns tuning into refinement, not reinvention. Helion already
+gives you a working baseline. Seeding means OpenEvolve spends time improving it
+instead of rediscovering it.
+
 ## Next steps for explainability
 
 If you want true “why did it make this change” reasoning:
@@ -125,7 +136,9 @@ This is small conceptually, but it needs changes in OpenEvolve or a wrapper to c
 
 ## Takeaway
 
-The system is not vibes. It records every config, score, and program. But it is still a black box for LLM rationale. With a small extension to capture reasoning, we can make the trace transparent.
+This tuning loop is measurable. Every config, score, and program is on disk. The
+LLM’s intent is not. If we want that, we must ask for it and store it. Until then,
+the numbers are the ground truth.
 
 ## Results
 
@@ -138,14 +151,14 @@ If you want a quick snapshot, see the auto-updated block below.
 ```
 | impl | avg_ms | tflops | speedup_vs_eager | tuning_time_s | note |
 | --- | --- | --- | --- | --- | --- |
-| sdpa_eager | 24.96730105082194 | 44.038065049077595 | 1.0 | None |  |
-| sdpa_torch_compile | 22.5395450592041 | 48.781447224774865 | 1.1077109580180482 | None |  |
-| helion_baseline | 9.097850322723389 | 120.85400273400712 | 2.7443077392097748 | None |  |
-| helion_openevolve | 10.204617076449924 | 107.74648568768325 | 2.4466671178128903 | 532.1930107709995 |  |
+| sdpa_eager | 25.387704849243164 | 43.308823475973945 | 1.0 | None |  |
+| sdpa_torch_compile | 22.468698501586914 | 48.93526110105327 | 1.1299143493981232 | None |  |
+| helion_baseline | 9.181479835510254 | 119.75320400133465 | 2.765099450641255 | None |  |
+| helion_openevolve | 8.357611482793635 | 131.5581168183801 | 3.037674687500191 | 1209.0990149450008 |  |
 ```
-Updated: 2026-01-02 22:05:06
+Updated: 2026-01-02 23:04:09
 
-![Qwen3 GQA latency plot](../openevolve_artifacts/qwen3_gqa_report/qwen3_gqa_results.png)
+![Qwen3 GQA latency plot](openevolve_artifacts/qwen3_gqa_report/qwen3_gqa_results.png)
 <!-- RESULTS:END -->
 
 ## Results in detail
@@ -235,4 +248,4 @@ openevolve_artifacts/tuning_summary.json
 
 ## Conclusion
 
-Kernel performance is a policy decision expressed as a small set of integers.  OpenEvolve makes that policy explicit and auditable. It records every candidate, every score, and every failure. When it wins, the win is real. When it loses, it is still data, not a hunch. That is the core value. It turns kernel tuning from folklore into an artifact you can review, diff, and trust.
+Kernel performance is a policy decision expressed as a small set of integers.  OpenEvolve makes that policy explicit and auditable. It records every candidate, every score, and every failure. So, you can see what was tried, what worked, and what did not.

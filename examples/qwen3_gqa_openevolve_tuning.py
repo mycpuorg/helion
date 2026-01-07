@@ -213,6 +213,21 @@ def main() -> None:
         population_size=20,
         temperature=0.7,
         verbose=True,
+        initial_config={
+            "block_bh": 1,
+            "block_m": 64,
+            "block_n": 64,
+            "num_warps": 4,
+            "num_stages": 2,
+        },
+        llm_models=[
+            {
+                "name": "gpt-5.2",
+                "weight": 1.0,
+                "api_base": "https://api.openai.com/v1",
+                "api_key": "${OPENAI_API_KEY}",
+            },
+        ],
     )
 
     tuning_start = time.perf_counter()
