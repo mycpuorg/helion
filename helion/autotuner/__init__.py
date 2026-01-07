@@ -15,6 +15,7 @@ from .effort_profile import DifferentialEvolutionConfig as DifferentialEvolution
 from .effort_profile import PatternSearchConfig as PatternSearchConfig
 from .effort_profile import RandomSearchConfig as RandomSearchConfig
 from .finite_search import FiniteSearch as FiniteSearch
+from .llm_search import LLMSearch as LLMSearch
 from .local_cache import LocalAutotuneCache as LocalAutotuneCache
 from .local_cache import StrictLocalAutotuneCache as StrictLocalAutotuneCache
 from .pattern_search import InitialPopulationStrategy as InitialPopulationStrategy
@@ -25,6 +26,7 @@ from .surrogate_pattern_search import LFBOPatternSearch
 search_algorithms = {
     "DESurrogateHybrid": DESurrogateHybrid,
     "LFBOPatternSearch": LFBOPatternSearch,
+    "LLMSearch": LLMSearch,
     "DifferentialEvolutionSearch": DifferentialEvolutionSearch,
     "FiniteSearch": FiniteSearch,
     "PatternSearch": PatternSearch,
