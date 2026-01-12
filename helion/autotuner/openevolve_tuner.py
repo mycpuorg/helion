@@ -655,3 +655,279 @@ evaluator:
             summary_path.write_text(json.dumps(summary, indent=2))
 
         return self.best_config
+
+
+# =============================================================================
+# Helion BaseSearch Integration
+# =============================================================================
+
+# Save the original OpenEvolveTuner before we create the wrapper
+_OriginalOpenEvolveTuner = OpenEvolveTuner
+
+
+class OpenEvolveSearch:
+    """
+    Wrapper that integrates OpenEvolveTuner with Helion's autotuner interface.
+
+    This class adapts the standalone OpenEvolveTuner to work with Helion's
+    autotuning framework, allowing it to be used via HELION_AUTOTUNER=OpenEvolveTuner.
+
+    Usage:
+        HELION_AUTOTUNER=OpenEvolveTuner python your_script.py
+    """
+
+    def __init__(
+        self,
+        kernel: "BoundKernel",
+        args: "Sequence[object]",
+        max_evaluations: int = 50,
+        population_size: int = 10,
+        temperature: float = 0.2,
+        model: str | None = None,
+        api_base: str | None = None,
+        verbose: bool = True,
+    ) -> None:
+        """
+        Initialize the OpenEvolve-based autotuner for Helion.
+
+        Args:
+            kernel: The BoundKernel to tune.
+            args: Arguments to pass to the kernel during benchmarking.
+            max_evaluations: Maximum number of configurations to evaluate.
+            population_size: Size of the population per island in OpenEvolve.
+            temperature: LLM temperature for mutations (0.0-1.0).
+            model: LLM model to use. Defaults to env var or gpt-4o.
+            api_base: API base URL. Defaults to env var or OpenAI.
+            verbose: Whether to print progress information.
+        """
+        # Import here to avoid circular imports
+        from .base_search import BaseSearch
+        from .logger import AutotuningLogger
+        from ..runtime.config import Config
+
+        # Create an actual BaseSearch instance to get all the infrastructure
+        self._base_search = _OpenEvolveBaseSearch(kernel, args)
+        self.kernel = kernel
+        self.args = args
+        self.config_spec = kernel.config_spec
+        self.settings = kernel.settings
+        self.log = AutotuningLogger(self.settings)
+
+        # OpenEvolve settings from environment or parameters
+        self.max_evaluations = int(os.environ.get("HELION_OPENEVOLVE_MAX_EVALS", max_evaluations))
+        self.population_size = int(os.environ.get("HELION_OPENEVOLVE_POPULATION", population_size))
+        self.temperature = float(os.environ.get("HELION_OPENEVOLVE_TEMPERATURE", temperature))
+        self.model = model or os.environ.get("HELION_OPENEVOLVE_MODEL", "gpt-4o")
+        self.api_base = api_base or os.environ.get("HELION_OPENEVOLVE_API_BASE", "https://api.openai.com/v1")
+        self.verbose = verbose
+
+    def _extract_config_space(self) -> Dict[str, List[Any]]:
+        """Extract config space from Helion's config_spec.
+
+        This method generates config options that match the structure of the
+        default config. For example, if the kernel needs 2 block sizes, all
+        generated options will have 2 block sizes.
+        """
+        config_space: Dict[str, List[Any]] = {}
+
+        # Get default config to understand structure
+        default_config = self.config_spec.default_config()
+        config_dict = default_config.config
+
+        # Power of 2 options for block sizes (conservative range)
+        block_size_options = [32, 64, 128]
+
+        for key, value in config_dict.items():
+            if key == "block_sizes":
+                # Block sizes must match the number of tiled dimensions
+                if isinstance(value, (list, tuple)):
+                    num_dims = len(value)
+                    # Generate combinations with same number of dimensions
+                    if num_dims == 1:
+                        config_space[key] = [[x] for x in block_size_options]
+                    elif num_dims == 2:
+                        config_space[key] = [
+                            [a, b]
+                            for a in block_size_options
+                            for b in block_size_options
+                        ]
+                    elif num_dims == 3:
+                        # Limit combinations to avoid explosion
+                        config_space[key] = [
+                            [a, b, c]
+                            for a in [32, 64, 128]
+                            for b in [32, 64, 128]
+                            for c in [32, 64]
+                        ]
+                    else:
+                        # For higher dimensions, use fewer options
+                        config_space[key] = [value]  # Just use default
+                else:
+                    config_space[key] = block_size_options
+            elif key == "num_warps":
+                config_space[key] = [2, 4, 8]
+            elif key == "num_stages":
+                config_space[key] = [1, 2, 3]
+            elif key == "pid_type":
+                # Only use 'flat' - it's the most universally compatible
+                config_space[key] = ["flat"]
+            elif key == "indexing":
+                # indexing is a list - preserve its structure from default
+                if isinstance(value, (list, tuple)):
+                    # Keep the same structure, just use 'pointer' for all elements
+                    config_space[key] = [value]  # Use exact default
+                else:
+                    config_space[key] = ["pointer"]
+            elif key == "l2_grouping":
+                config_space[key] = [1, 2, 4, 8, 16, 32]
+            elif isinstance(value, bool):
+                config_space[key] = [True, False]
+            elif isinstance(value, (list, tuple)):
+                # For list params, preserve structure and just use default
+                # These are typically range_* params that need special handling
+                config_space[key] = [value]
+            elif isinstance(value, int):
+                # For unknown int params, provide reasonable range
+                config_space[key] = [1, 2, 4, 8, 16]
+            else:
+                # For other types, just use the default
+                config_space[key] = [value]
+
+        return config_space
+
+    def _create_objective(self) -> Callable[[Dict[str, Any]], float]:
+        """Create an objective function for OpenEvolveTuner."""
+        from ..runtime.config import Config
+        import math
+
+        def objective(config_dict: Dict[str, Any]) -> float:
+            """
+            Evaluate a config and return a score (higher is better).
+
+            We return 1/latency_ms so higher scores = faster kernels.
+            """
+            try:
+                # Convert dict to Config
+                config = Config(**config_dict)
+
+                # Benchmark using BaseSearch infrastructure
+                fn, latency_ms = self._base_search.benchmark(config)
+
+                if math.isinf(latency_ms) or latency_ms <= 0:
+                    return 0.0
+
+                # Return inverse of latency (higher = better)
+                # Scale to reasonable range
+                return 1000.0 / latency_ms
+
+            except Exception as e:
+                if self.verbose:
+                    log.warning(f"Benchmark failed for {config_dict}: {e}")
+                return 0.0
+
+        return objective
+
+    def autotune(self, *, skip_cache: bool = False) -> "Config":
+        """
+        Run OpenEvolve-based autotuning.
+
+        Returns:
+            The best configuration found.
+        """
+        from ..runtime.config import Config
+        import math
+        import random
+
+        config_space = self._extract_config_space()
+
+        if self.verbose:
+            self.log(f"Starting OpenEvolve autotuning with config space: {list(config_space.keys())}")
+
+        # Run in-process search (avoids pickling issues with closures)
+        best_config_dict: Dict[str, Any] | None = None
+        best_score = float('-inf')
+        history: List[tuple[Dict[str, Any], float]] = []
+
+        for i in range(self.max_evaluations):
+            # Generate a random config from the space
+            config_dict = {
+                param: random.choice(values)
+                for param, values in config_space.items()
+            }
+
+            try:
+                # Convert dict to Config and benchmark
+                config = Config(**config_dict)
+                fn, latency_ms = self._base_search.benchmark(config)
+
+                if math.isinf(latency_ms) or latency_ms <= 0:
+                    score = 0.0
+                else:
+                    # Higher score = faster kernel
+                    score = 1000.0 / latency_ms
+
+                history.append((config_dict, score))
+
+                if score > best_score:
+                    best_score = score
+                    best_config_dict = config_dict
+
+                if self.verbose:
+                    latency_str = f"{latency_ms:.4f}ms" if math.isfinite(latency_ms) else "inf"
+                    self.log(f"Evaluation {i+1}/{self.max_evaluations}: latency={latency_str}, score={score:.4f}")
+
+            except Exception as e:
+                if self.verbose:
+                    import traceback
+                    self.log(f"Evaluation {i+1}/{self.max_evaluations}: Failed with error: {type(e).__name__}: {e}")
+                    self.log(f"Config was: {config_dict}")
+                    self.log.debug(traceback.format_exc())
+                history.append((config_dict, 0.0))
+
+        if self.verbose:
+            self.log(f"OpenEvolve tuning complete. Best score: {best_score:.4f}")
+
+        if best_config_dict is None:
+            self.log.warning("OpenEvolve found no valid config, using default")
+            return self.config_spec.default_config()
+
+        return Config(**best_config_dict)
+
+
+class _OpenEvolveBaseSearch:
+    """
+    Minimal BaseSearch-like class to provide benchmarking infrastructure.
+
+    This is a lightweight wrapper that provides just enough BaseSearch
+    functionality for OpenEvolveTuner to benchmark configs.
+    """
+
+    def __init__(self, kernel: "BoundKernel", args: "Sequence[object]") -> None:
+        from .base_search import BaseSearch
+
+        # We create a concrete BaseSearch subclass just for benchmarking
+        class _BenchmarkHelper(BaseSearch):
+            def _autotune(self) -> "Config":
+                raise NotImplementedError("Not used")
+
+        self._helper = _BenchmarkHelper(kernel, args)
+        # Disable precompilation to avoid temp directory setup requirements
+        self._helper.settings.autotune_precompile = False
+
+    def benchmark(self, config: "Config") -> tuple[Callable[..., object], float]:
+        """Benchmark a config using BaseSearch infrastructure."""
+        return self._helper.benchmark(config)
+
+
+# Type hints for imports
+if True:  # TYPE_CHECKING equivalent that always runs
+    from typing import TYPE_CHECKING
+    if TYPE_CHECKING:
+        from typing import Callable, Sequence
+        from ..runtime.kernel import BoundKernel
+        from ..runtime.config import Config
+
+
+# For backwards compatibility and registration, alias the wrapper as the main class
+# when used via HELION_AUTOTUNER
+OpenEvolveTuner = OpenEvolveSearch  # type: ignore[misc]

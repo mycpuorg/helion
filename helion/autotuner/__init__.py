@@ -22,6 +22,7 @@ from .pattern_search import InitialPopulationStrategy as InitialPopulationStrate
 from .pattern_search import PatternSearch as PatternSearch
 from .random_search import RandomSearch as RandomSearch
 from .surrogate_pattern_search import LFBOPatternSearch
+from .openevolve_tuner import OpenEvolveTuner as OpenEvolveTuner
 
 search_algorithms = {
     "DESurrogateHybrid": DESurrogateHybrid,
@@ -29,6 +30,7 @@ search_algorithms = {
     "LLMSearch": LLMSearch,
     "DifferentialEvolutionSearch": DifferentialEvolutionSearch,
     "FiniteSearch": FiniteSearch,
+    "OpenEvolveTuner": OpenEvolveTuner,
     "PatternSearch": PatternSearch,
     "RandomSearch": RandomSearch,
 }
