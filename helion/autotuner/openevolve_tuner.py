@@ -59,7 +59,7 @@ class OpenEvolveTuner:
         max_evaluations: int = 100,
         population_size: int = 20,
         temperature: float = 0.2,
-        model: str = "gpt-5.1",
+        model: str = "gpt-5.2",
         api_base: str = "https://api.openai.com/v1",
         verbose: bool = True,
         checkpoint_interval: int = 10,
@@ -457,6 +457,16 @@ evaluator:
             ImportError: If OpenEvolve is not installed
             RuntimeError: If tuning fails or no valid configs are found
         """
+        # CRITICAL: Set multiprocessing to spawn for CUDA compatibility
+        # OpenEvolve uses multiprocessing which defaults to fork on Linux.
+        # CUDA cannot be re-initialized in forked processes, so we must use spawn.
+        import multiprocessing
+        try:
+            multiprocessing.set_start_method('spawn', force=True)
+        except RuntimeError:
+            # Already set - that's fine
+            pass
+
         try:
             from openevolve import run_evolution
         except ImportError as e:
