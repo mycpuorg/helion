@@ -28,6 +28,7 @@ from .pattern_search import PatternSearch as PatternSearch
 from .random_search import RandomSearch as RandomSearch
 from .surrogate_pattern_search import LFBOPatternSearch
 from .surrogate_pattern_search import LFBOTreeSearch
+from .openevolve_tuner import OpenEvolveTuner as OpenEvolveTuner
 
 if TYPE_CHECKING:
     from .base_search import BaseSearch
@@ -39,6 +40,7 @@ search_algorithms: dict[str, type[BaseSearch]] = {
     "LLMSearch": LLMSearch,
     "DifferentialEvolutionSearch": DifferentialEvolutionSearch,
     "FiniteSearch": FiniteSearch,
+    "OpenEvolveTuner": OpenEvolveTuner,
     "PatternSearch": PatternSearch,
     "RandomSearch": RandomSearch,
 }
